@@ -11,6 +11,10 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // `npm run db:seed` runs the seed script through Node's type stripping,
+    // which requires relative imports to carry their real `.ts` extension.
+    // Safe here because `noEmit` is on — nothing is ever rewritten.
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
     "plugins": [
