@@ -31,6 +31,8 @@ export function AdminSongsScreen() {
   const [syncingLyrics, setSyncingLyrics] = useState(false);
   const [syncingAudius, setSyncingAudius] = useState(false);
   const [syncingOpenverse, setSyncingOpenverse] = useState(false);
+  const [syncingCcmixter, setSyncingCcmixter] = useState(false);
+  const [syncingFma, setSyncingFma] = useState(false);
   const [deleting, setDeleting] = useState<SongDTO | null>(null);
 
   useEffect(() => {
@@ -219,6 +221,46 @@ export function AdminSongsScreen() {
     }
   }
 
+  async function bulkSyncCcmixter() {
+    setSyncingCcmixter(true);
+    try {
+      const result = await apiFetch<{ total: number; imported: number; skipped: number; failed: number }>(
+        "/api/admin/ccmixter/import", { method: "POST" },
+      );
+      clearFetchCache("/api/admin/songs");
+      clearFetchCache("/api/songs");
+      refetch();
+      toast.success(
+        `ccMixter: ${result.imported} indie/electronic track${result.imported === 1 ? "" : "s"} imported`,
+        `${result.skipped} already in catalog`,
+      );
+    } catch (cause) {
+      toast.error("ccMixter import failed", errorMessage(cause));
+    } finally {
+      setSyncingCcmixter(false);
+    }
+  }
+
+  async function bulkSyncFma() {
+    setSyncingFma(true);
+    try {
+      const result = await apiFetch<{ total: number; imported: number; skipped: number; failed: number }>(
+        "/api/admin/fma/import", { method: "POST" },
+      );
+      clearFetchCache("/api/admin/songs");
+      clearFetchCache("/api/songs");
+      refetch();
+      toast.success(
+        `Free Music Archive: ${result.imported} CC track${result.imported === 1 ? "" : "s"} imported`,
+        `${result.skipped} already in catalog`,
+      );
+    } catch (cause) {
+      toast.error("FMA import failed", errorMessage(cause));
+    } finally {
+      setSyncingFma(false);
+    }
+  }
+
   async function confirmDelete() {
     if (!deleting) return;
     try {
@@ -312,6 +354,26 @@ export function AdminSongsScreen() {
           >
             <RefreshCw className={`size-4 ${syncing ? "animate-spin" : ""}`} aria-hidden="true" />
             {syncing ? "Syncing…" : "Bulk Sync Jamendo"}
+          </Button>
+          <Button
+            variant="secondary"
+            size="lg"
+            onClick={bulkSyncCcmixter}
+            disabled={syncingCcmixter}
+            title="FULL songs · ccMixter remixes & originals — indie, electronic, hip-hop, folk"
+          >
+            <Music4 className={`size-4 ${syncingCcmixter ? "animate-spin" : ""}`} aria-hidden="true" />
+            {syncingCcmixter ? "Importing…" : "ccMixter Indie 🎧"}
+          </Button>
+          <Button
+            variant="secondary"
+            size="lg"
+            onClick={bulkSyncFma}
+            disabled={syncingFma}
+            title="FULL songs · Free Music Archive — ~100k indie, folk, electronic, jazz tracks"
+          >
+            <Music4 className={`size-4 ${syncingFma ? "animate-spin" : ""}`} aria-hidden="true" />
+            {syncingFma ? "Importing…" : "Free Music Archive 🎵"}
           </Button>
           <Button variant="secondary" size="lg" onClick={() => setImporting(true)}>
             <CloudDownload className="size-4" aria-hidden="true" />

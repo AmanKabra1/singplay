@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/components/providers/SessionProvider";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { apiFetch } from "@/lib/api/client";
-import { cn, initials } from "@/lib/utils";
+import { initials } from "@/lib/utils";
 import { toast } from "@/store/ui";
 
 function AccountMenu() {
@@ -145,7 +145,7 @@ export function TopBar() {
 
       <form
         role="search"
-        className="ml-auto hidden min-w-0 flex-1 max-w-md sm:block lg:ml-0"
+        className="hidden min-w-0 flex-1 max-w-md sm:block"
         onSubmit={(event) => {
           event.preventDefault();
           const trimmed = query.trim();
@@ -171,7 +171,7 @@ export function TopBar() {
         </div>
       </form>
 
-      <div className={cn("flex items-center gap-1", "ml-auto sm:ml-0")}>
+      <div className="ml-auto flex shrink-0 items-center gap-1">
         <Button
           variant="ghost"
           size="icon"

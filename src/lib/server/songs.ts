@@ -6,6 +6,7 @@ import {
   eq,
   gte,
   inArray,
+  isNotNull,
   lt,
   or,
   sql,
@@ -274,27 +275,27 @@ export async function browseSections(viewer: {
   const currentYear = new Date().getFullYear();
 
   // Discover which genres and languages have enough tracks to show a shelf.
-  const [topGenreRows, topLangRows] = await Promise.all([
+  // Fetch more rows than needed, then filter in JS — avoids TiDB Serverless
+  // HAVING-clause quirks that cause intermittent query failures.
+  const [allGenreRows, allLangRows] = await Promise.all([
     db
       .select({ genre: songs.genre, count: sql<number>`count(*)` })
       .from(songs)
-      .where(and(eq(songs.isPublished, true), sql`${songs.genre} is not null`))
+      .where(and(eq(songs.isPublished, true), isNotNull(songs.genre)))
       .groupBy(songs.genre)
-      .having(sql`count(*) >= 3`)
       .orderBy(desc(sql<number>`count(*)`))
-      .limit(5),
+      .limit(20),
     db
       .select({ language: songs.language, count: sql<number>`count(*)` })
       .from(songs)
-      .where(and(eq(songs.isPublished, true), sql`${songs.language} is not null`))
+      .where(and(eq(songs.isPublished, true), isNotNull(songs.language)))
       .groupBy(songs.language)
-      .having(sql`count(*) >= 3`)
       .orderBy(desc(sql<number>`count(*)`))
-      .limit(6),
+      .limit(20),
   ]);
 
-  const topGenres = topGenreRows.map((r) => r.genre!);
-  const topLangs = topLangRows.map((r) => r.language!);
+  const topGenres = allGenreRows.filter((r) => r.count >= 3).slice(0, 5).map((r) => r.genre!);
+  const topLangs = allLangRows.filter((r) => r.count >= 3).slice(0, 6).map((r) => r.language!);
 
   // All shelf queries run in parallel.
   const allRows = await Promise.all([
