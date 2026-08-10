@@ -77,6 +77,13 @@ function first(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
+/** djb2 hash → 8-char hex. Used to keep externalIds under 64 chars without collision. */
+function shortHash(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i);
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
 function parseDurationStr(len: string | undefined): number {
   if (!len) return 0;
   const ci = len.indexOf(":");
@@ -150,7 +157,8 @@ function extractTracks(
   );
 
   return mp3s.slice(0, 8).map((f) => ({
-    externalId: `archive-${identifier}-${f.name}`,
+    // Keep externalId under 64 chars: prefix + 25-char identifier + 8-char filename hash.
+    externalId: `ar-${identifier.slice(0, 25)}-${shortHash(f.name)}`,
     title: f.title ?? itemTitle,
     artist: f.creator ?? itemArtist,
     album: itemAlbum,
@@ -236,7 +244,9 @@ export const POST = route(async () => {
         createdBy: admin.id,
       });
       imported++;
-    } catch (err) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("1062") || msg.includes("Duplicate entry")) continue;
       console.error("[archive/import] insert failed", c.externalId, err);
       failed++;
     }
