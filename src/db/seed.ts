@@ -304,16 +304,24 @@ async function seedAdmin() {
     };
   }
 
-  await db.insert(users).values({
-    id: seedId("admin"),
-    email,
-    displayName: "SingPlay Admin",
-    passwordHash: await hash(password, 12),
-    role: "admin",
-    emailVerifiedAt: new Date(),
-  });
+  try {
+    await db.insert(users).values({
+      id: seedId("admin"),
+      email,
+      displayName: "SingPlay Admin",
+      passwordHash: await hash(password, 12),
+      role: "admin",
+      emailVerifiedAt: new Date(),
+    });
+  } catch {
+    // ID already taken (previous run with a different ADMIN_EMAIL) — update instead.
+    await db
+      .update(users)
+      .set({ email, passwordHash: await hash(password, 12), role: "admin" })
+      .where(eq(users.id, seedId("admin")));
+  }
 
-  return { created: true, reason: `Created an admin account for ${email}.` };
+  return { created: true, reason: `Created admin account for ${email}.` };
 }
 
 async function main() {
