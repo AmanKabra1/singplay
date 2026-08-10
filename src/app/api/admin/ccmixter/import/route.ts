@@ -31,25 +31,35 @@ const QUERIES = [
 ];
 
 type CcmixterTrack = {
-  upload_id: string;
-  name: string;
-  artist_name?: string;
-  duration?: number;
-  download_url?: string;
+  upload_id: number | string;
+  upload_name: string;
+  artist_name: string;
+  /** Duration in seconds. */
+  upload_duration: number;
+  /** Direct MP3 download link. */
+  download_url: string;
   image_url?: string;
   license_url?: string;
 };
 
 async function searchCcmixter(term: string): Promise<CcmixterTrack[]> {
-  const url = `${BASE}?f=json&limit=30&t=download&q=${encodeURIComponent(term)}&sort=created,desc`;
+  const url = `${BASE}?f=json&limit=30&t=ccud&q=${encodeURIComponent(term)}&sort=rank,desc`;
   try {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(12_000),
       headers: { Accept: "application/json" },
     });
     if (!res.ok) return [];
-    const data = (await res.json()) as { result?: CcmixterTrack[] };
-    return (data.result ?? []).filter((t) => t.download_url && (t.duration ?? 0) > 30);
+    const data = await res.json();
+    // ccMixter API returns a direct JSON array (no wrapper object).
+    const arr: unknown[] = Array.isArray(data) ? data : [];
+    return arr.filter(
+      (t): t is CcmixterTrack =>
+        typeof t === "object" &&
+        t !== null &&
+        typeof (t as CcmixterTrack).download_url === "string" &&
+        ((t as CcmixterTrack).upload_duration ?? 0) > 30,
+    );
   } catch {
     return [];
   }
@@ -63,7 +73,8 @@ export const POST = route(async () => {
   for (const { term, genre } of QUERIES) {
     const tracks = await searchCcmixter(term);
     for (const t of tracks) {
-      if (!seen.has(t.upload_id)) seen.set(t.upload_id, { track: t, genre });
+      const id = String(t.upload_id);
+      if (!seen.has(id)) seen.set(id, { track: t, genre });
     }
   }
 
@@ -96,12 +107,10 @@ export const POST = route(async () => {
     const externalId = `ccmixter-${ccId}`;
     if (existing.has(externalId)) continue;
 
-    const durationSec = track.duration ? Math.round(track.duration / 1000) : 0;
-
     try {
       await db.insert(songs).values({
         id: newId(),
-        title: track.name.slice(0, 255),
+        title: (track.upload_name ?? "Untitled").slice(0, 255),
         artist: (track.artist_name ?? "ccMixter").slice(0, 255),
         album: null,
         genre,
@@ -109,7 +118,7 @@ export const POST = route(async () => {
         language: "English",
         releaseYear: null,
         decade: null,
-        durationSec,
+        durationSec: Math.round(track.upload_duration),
         coverUrl: track.image_url ?? null,
         audioUrl: track.download_url,
         previewUrl: null,
@@ -120,7 +129,9 @@ export const POST = route(async () => {
         createdBy: admin.id,
       });
       imported++;
-    } catch (err) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("1062") || msg.includes("Duplicate entry")) continue;
       console.error("[ccmixter/import] insert failed", externalId, err);
       failed++;
     }
