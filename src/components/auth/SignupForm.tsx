@@ -7,7 +7,7 @@ import { useState } from "react";
 import { AuthDivider, GoogleButton } from "@/components/auth/GoogleButton";
 import { StrengthMeter } from "@/components/auth/StrengthMeter";
 import { Button } from "@/components/ui/Button";
-import { Field, FormError, TextInput } from "@/components/ui/Field";
+import { Field, FormError, PasswordInput, TextInput } from "@/components/ui/Field";
 import { apiFetch, errorMessage, RequestError } from "@/lib/api/client";
 import { clearFetchCache } from "@/lib/hooks/useFetch";
 import { toast } from "@/store/ui";
@@ -124,9 +124,8 @@ export function SignupForm() {
           hint="At least 8 characters, with a letter and a number."
         >
           {(props) => (
-            <TextInput
+            <PasswordInput
               {...props}
-              type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               autoComplete="new-password"

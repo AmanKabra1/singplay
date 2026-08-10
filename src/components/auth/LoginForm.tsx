@@ -6,7 +6,7 @@ import { useState } from "react";
 
 import { AuthDivider, GoogleButton } from "@/components/auth/GoogleButton";
 import { Button } from "@/components/ui/Button";
-import { Field, FormError, TextInput } from "@/components/ui/Field";
+import { Field, FormError, PasswordInput, TextInput } from "@/components/ui/Field";
 import { apiFetch, errorMessage, RequestError } from "@/lib/api/client";
 import { clearFetchCache } from "@/lib/hooks/useFetch";
 
@@ -85,9 +85,8 @@ export function LoginForm() {
 
         <Field label="Password" required error={fieldErrors.password}>
           {(props) => (
-            <TextInput
+            <PasswordInput
               {...props}
-              type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               autoComplete="current-password"
