@@ -10,62 +10,61 @@ import { newId } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 /**
- * Imports full-length CC-licensed songs from Openverse (api.openverse.org).
- * Openverse is the WordPress Foundation's open-content search engine — it
- * aggregates Jamendo, Wikimedia, FreeSound and more into one API.
- * No API key required for up to 100 requests/day (anonymous tier).
- * The `url` field is a DIRECT full-length audio stream — no redirect.
+ * Imports CC-licensed audio from Openverse.
+ * Openverse indexes ~2M CC audio files from multiple platforms.
+ * https://openverse.org/
  */
 
 const BASE = "https://api.openverse.org/v1/audio";
 
-// Licenses that are safe to use freely
-const OPEN_LICENSES = "by,by-sa,cc0,by-nc,by-nd,by-nc-sa,by-nc-nd,pdm";
-
-const QUERIES: { q: string; lang: string; genre: string }[] = [
-  { q: "hindi song", lang: "Hindi", genre: "World" },
-  { q: "bhajan", lang: "Hindi", genre: "Devotional" },
-  { q: "indian classical", lang: "Hindi", genre: "Classical" },
-  { q: "bollywood", lang: "Hindi", genre: "Bollywood" },
-  { q: "punjabi folk", lang: "Punjabi", genre: "Folk" },
-  { q: "rajasthani folk", lang: "Rajasthani", genre: "Folk" },
-  { q: "world music", lang: "English", genre: "World" },
-  { q: "pop", lang: "English", genre: "Pop" },
-  { q: "jazz", lang: "English", genre: "Jazz" },
-  { q: "electronic", lang: "English", genre: "Electronic" },
+const SEARCHES = [
+  "music indie",
+  "music ambient",
+  "music electronic",
+  "music folk",
+  "music jazz",
+  "music world",
+  "music classical",
+  "music pop",
+  "music rock",
+  "music hip hop",
 ];
 
-type OpenverseTrack = {
+type OpenverseAudio = {
   id: string;
   title: string;
-  creator?: string;
-  url: string;
+  creator: string;
+  duration: number | null;
+  url?: string;
+  download_url?: string;
   thumbnail?: string;
-  duration?: number;
-  license?: string;
+  license: string;
   license_url?: string;
-  source?: string;
-  genres?: string[];
-  tags?: { name: string }[];
 };
 
-async function searchOpenverse(q: string): Promise<OpenverseTrack[]> {
-  const url =
-    `${BASE}/?q=${encodeURIComponent(q)}&page_size=20&license=${OPEN_LICENSES}` +
-    `&mature=false&unstable__include_sensitive_results=false`;
+async function searchOpenverse(query: string): Promise<OpenverseAudio[]> {
+  const params = new URLSearchParams({
+    q: query,
+    filter_dead: "true",
+    license_type: "commercial,modification",
+    sort_by: "recency",
+    page_size: "50",
+  });
+
+  const url = `${BASE}?${params.toString()}`;
   try {
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(12_000),
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "SingPlay/1.0 (+https://singplay.app)",
-      },
+      signal: AbortSignal.timeout(15_000),
+      headers: { Accept: "application/json" },
     });
     if (!res.ok) return [];
-    const data = (await res.json()) as { results?: OpenverseTrack[] };
-    // Only keep tracks with a real audio URL (not empty or placeholder)
+    const data = (await res.json()) as { results?: OpenverseAudio[] };
     return (data.results ?? []).filter(
-      (t) => t.url && t.url.startsWith("http") && (t.duration ?? 0) > 30_000,
+      (a) =>
+        a.download_url &&
+        (a.duration === null || a.duration === 0 || a.duration > 30) &&
+        a.title &&
+        a.creator,
     );
   } catch {
     return [];
@@ -75,12 +74,12 @@ async function searchOpenverse(q: string): Promise<OpenverseTrack[]> {
 export const POST = route(async () => {
   const admin = await requireAdmin();
 
-  // 1. Gather tracks, deduplicate by Openverse UUID.
-  const seen = new Map<string, { track: OpenverseTrack; lang: string; genre: string }>();
-  for (const { q, lang, genre } of QUERIES) {
-    const tracks = await searchOpenverse(q);
+  // 1. Gather tracks from all searches, deduplicate by Openverse ID.
+  const seen = new Map<string, OpenverseAudio>();
+  for (const query of SEARCHES) {
+    const tracks = await searchOpenverse(query);
     for (const t of tracks) {
-      if (!seen.has(t.id)) seen.set(t.id, { track: t, lang, genre });
+      if (!seen.has(t.id)) seen.set(t.id, t);
     }
   }
 
@@ -98,7 +97,7 @@ export const POST = route(async () => {
       .from(songs)
       .where(
         and(
-          eq(songs.source, "jamendo"),
+          eq(songs.source, "archive"),
           inArray(songs.externalId, externalIds.slice(i, i + 500)),
         ),
       );
@@ -109,37 +108,35 @@ export const POST = route(async () => {
   let imported = 0;
   let failed = 0;
 
-  for (const [ovId, { track, lang, genre }] of seen) {
+  for (const [ovId, track] of seen) {
     const externalId = `openverse-${ovId}`;
     if (existing.has(externalId)) continue;
-
-    // Duration from Openverse is in milliseconds
-    const durationSec = track.duration ? Math.round(track.duration / 1000) : 0;
-    const trackGenre = track.genres?.[0] ?? genre;
 
     try {
       await db.insert(songs).values({
         id: newId(),
-        title: track.title.slice(0, 255),
+        title: (track.title ?? "Untitled").slice(0, 255),
         artist: (track.creator ?? "Unknown").slice(0, 255),
         album: null,
-        genre: trackGenre,
+        genre: "Indie",
         mood: null,
-        language: lang,
+        language: "English",
         releaseYear: null,
         decade: null,
-        durationSec,
+        durationSec: track.duration ?? 0,
         coverUrl: track.thumbnail ?? null,
-        audioUrl: track.url,
+        audioUrl: track.download_url ?? "",
         previewUrl: null,
-        source: "jamendo",   // Openverse aggregates CC music — same license class as Jamendo
+        source: "archive",
         externalId: externalId.slice(0, 64),
-        licenseNote: `CC · Openverse${track.source ? ` via ${track.source}` : ""} · ${track.license ?? "open"}`,
+        licenseNote: `CC · Openverse · ${track.license}`,
         isPublished: true,
         createdBy: admin.id,
       });
       imported++;
-    } catch (err) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("1062") || msg.includes("Duplicate entry")) continue;
       console.error("[openverse/import] insert failed", externalId, err);
       failed++;
     }
