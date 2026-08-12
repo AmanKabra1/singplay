@@ -23,44 +23,67 @@ const QUERIES = [
   { term: "lo-fi", genre: "Lo-Fi" },
   { term: "indie", genre: "Indie" },
   { term: "hip hop", genre: "Hip Hop" },
-  { term: "world music", genre: "World" },
+  { term: "world", genre: "World" },
   { term: "folk", genre: "Folk" },
   { term: "jazz", genre: "Jazz" },
   { term: "pop", genre: "Pop" },
   { term: "rock", genre: "Rock" },
 ];
 
+type CcmixterFile = {
+  file_name: string;
+  download_url: string;
+  file_format_info?: {
+    ps?: string; // Duration in "m:ss" format
+  };
+};
+
 type CcmixterTrack = {
   upload_id: number | string;
   upload_name: string;
-  artist_name: string;
-  /** Duration in seconds. */
-  upload_duration: number;
-  /** Direct MP3 download link. */
-  download_url: string;
-  image_url?: string;
+  user_name: string;
+  user_real_name?: string;
+  files?: CcmixterFile[];
+  license_name?: string;
   license_url?: string;
 };
 
+function parseDuration(ps: string | undefined): number {
+  if (!ps) return 0;
+  const [mins, secs] = ps.split(":");
+  const m = parseInt(mins, 10) || 0;
+  const s = parseFloat(secs) || 0;
+  return Math.round(m * 60 + s);
+}
+
 async function searchCcmixter(term: string): Promise<CcmixterTrack[]> {
-  const url = `${BASE}?f=json&limit=30&t=ccud&q=${encodeURIComponent(term)}&sort=rank,desc`;
+  const url = `${BASE}?f=json&limit=50&q=${encodeURIComponent(term)}&sort=rank,desc`;
   try {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(12_000),
       headers: { Accept: "application/json" },
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.warn(`[ccmixter] search "${term}" failed:`, res.status);
+      return [];
+    }
     const data = await res.json();
-    // ccMixter API returns a direct JSON array (no wrapper object).
+    // ccMixter returns direct array
     const arr: unknown[] = Array.isArray(data) ? data : [];
-    return arr.filter(
+    const tracks = arr.filter(
       (t): t is CcmixterTrack =>
         typeof t === "object" &&
         t !== null &&
-        typeof (t as CcmixterTrack).download_url === "string" &&
-        ((t as CcmixterTrack).upload_duration ?? 0) > 30,
+        typeof (t as CcmixterTrack).upload_name === "string" &&
+        Array.isArray((t as CcmixterTrack).files) &&
+        (t as CcmixterTrack).files!.some((f) =>
+          typeof f?.download_url === "string" && parseDuration(f?.file_format_info?.ps) > 30,
+        ),
     );
-  } catch {
+    console.log(`[ccmixter] "${term}": found ${tracks.length} valid tracks out of ${arr.length}`);
+    return tracks;
+  } catch (err) {
+    console.error(`[ccmixter] search "${term}" error:`, err);
     return [];
   }
 }
@@ -79,6 +102,7 @@ export const POST = route(async () => {
   }
 
   if (seen.size === 0) {
+    console.log("[ccmixter/import] no tracks found across all genres");
     return jsonOk({ total: 0, imported: 0, skipped: 0, failed: 0 });
   }
 
@@ -107,24 +131,30 @@ export const POST = route(async () => {
     const externalId = `ccmixter-${ccId}`;
     if (existing.has(externalId)) continue;
 
+    // Find the first MP3 file longer than 30s
+    const mp3 = (track.files ?? []).find((f) => parseDuration(f?.file_format_info?.ps) > 30);
+    if (!mp3?.download_url) continue;
+
+    const durationSec = parseDuration(mp3.file_format_info?.ps);
+
     try {
       await db.insert(songs).values({
         id: newId(),
         title: (track.upload_name ?? "Untitled").slice(0, 255),
-        artist: (track.artist_name ?? "ccMixter").slice(0, 255),
+        artist: (track.user_real_name ?? track.user_name ?? "ccMixter").slice(0, 255),
         album: null,
         genre,
         mood: null,
         language: "English",
         releaseYear: null,
         decade: null,
-        durationSec: Math.round(track.upload_duration),
-        coverUrl: track.image_url ?? null,
-        audioUrl: track.download_url,
+        durationSec,
+        coverUrl: null,
+        audioUrl: mp3.download_url,
         previewUrl: null,
         source: "jamendo",
         externalId: externalId.slice(0, 64),
-        licenseNote: `CC · ccMixter · ${track.license_url ? "Licensed" : "Creative Commons"}`,
+        licenseNote: `CC · ccMixter · ${track.license_name || "Creative Commons"}`,
         isPublished: true,
         createdBy: admin.id,
       });
@@ -137,6 +167,7 @@ export const POST = route(async () => {
     }
   }
 
+  console.log(`[ccmixter/import] imported=${imported}, failed=${failed}, skipped=${seen.size - imported - failed}`);
   return jsonOk({
     total: seen.size,
     imported,

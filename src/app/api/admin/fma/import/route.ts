@@ -75,10 +75,16 @@ async function searchArchive(q: string): Promise<string[]> {
     `+mediatype:audio&output=json&fl[]=identifier&rows=15&sort[]=downloads+desc`;
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.warn(`[fma/search] query "${q}" failed:`, res.status);
+      return [];
+    }
     const data = (await res.json()) as { response?: { docs?: { identifier: string }[] } };
-    return (data.response?.docs ?? []).map((d) => d.identifier);
-  } catch {
+    const ids = (data.response?.docs ?? []).map((d) => d.identifier);
+    console.log(`[fma/search] "${q}": found ${ids.length} identifiers`);
+    return ids;
+  } catch (err) {
+    console.error(`[fma/search] error:`, err);
     return [];
   }
 }
