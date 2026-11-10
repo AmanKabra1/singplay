@@ -200,8 +200,28 @@ behind every chart.
 
 ## Deploying
 
-Deploys to Vercel as-is. Set every variable from `.env.local` in the project's
-environment settings (Production **and** Preview), point
-`NEXT_PUBLIC_APP_URL` at the deployed origin, and add
-`<origin>/api/auth/google/callback` to the Google OAuth client's authorised
-redirect URIs.
+Deploys to Vercel as-is. The free **Hobby** plan is for personal,
+non-commercial use only; use a Pro plan if the app ever earns money.
+
+1. Push the repo to GitHub and import it at [vercel.com/new](https://vercel.com/new).
+   The Next.js preset needs no overrides.
+2. Run `npm run db:push` once from your machine against the TiDB cluster, so the
+   schema exists before the first request.
+3. In **Settings → Environment Variables**, add each name below for Production
+   **and** Preview (values come from your `.env.local`, never from git):
+
+   | Name | Needed |
+   |---|---|
+   | `NEXT_PUBLIC_APP_URL` | yes — the deployed origin, e.g. `https://your-app.vercel.app` |
+   | `AUTH_SECRET` | yes |
+   | `DATABASE_URL` | yes |
+   | `ADMIN_EMAIL` | recommended |
+   | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL` | for uploads — Vercel's disk is read-only, so the `./.storage` fallback won't work |
+   | `JAMENDO_CLIENT_ID` | optional |
+   | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | optional |
+   | `RESEND_API_KEY`, `EMAIL_FROM` | optional — without them, email links only reach the function logs |
+
+4. Redeploy after changing variables, and add
+   `<origin>/api/auth/google/callback` to the Google OAuth client's authorised
+   redirect URIs. Add your R2 bucket's CORS rule to allow `PUT` from the origin so
+   browser uploads work.
